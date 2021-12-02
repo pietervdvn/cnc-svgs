@@ -1,0 +1,7 @@
+
+> PVC-buis: diameter buiten: 32.2mm; diameter binnen 25.5
+Middendiameter: (32.2 + 25.5) / 2 = 28.85
+Middenstraal: 14.4
+Stroke width: 6.7 / 4 = 1.7
+
+

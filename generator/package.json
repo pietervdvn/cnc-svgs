@@ -1,0 +1,26 @@
+{
+  "name": "mapcomplete",
+  "version": "0.0.5",
+  "repository": "https://github.com/pietervdvn/MapComplete",
+  "description": "A small website to edit OSM easily",
+  "bugs": "https://github.com/pietervdvn/MapComplete/issues",
+  "homepage": "https://mapcomplete.osm.be",
+  "main": "index.js",
+  "scripts": {
+    "run": "echo Generator.ts | entr -c ts-node Generator.ts",
+    "run-once": "ts-node Generator.ts"
+  },
+  "keywords": [],
+  "author": "pietervdvn",
+  "license": "GPL",
+  "dependencies": {
+    "@types/xml2js": "^0.4.9",
+    "xml2js": "^0.4.23"
+  },
+  "devDependencies": {
+    "fs": "0.0.1-security",
+    "ts-node": "^9.0.0",
+    "ts-node-dev": "^1.0.0-pre.63",
+    "typescript": "^3.9.7"
+  }
+}

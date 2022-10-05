@@ -3,22 +3,9 @@ import {writeFileSync} from "fs";
 
 const cutStyle = {
     stroke: "#ff0000",
-    "stroke-width": "1mm",
+    "stroke-width": "0.001mm",
     style: "fill:none;stroke-width:1"
 }
-
-const black = {
-    stroke: "#000000",
-    "stroke-width": "1mm",
-    style: "fill:none;stroke-width:1"
-}
-
-const green = {
-    stroke: "#00ff00",
-    "stroke-width": "1mm",
-    style: "fill:none;stroke-width:1"
-}
-
 
 class Vect {
 
@@ -182,7 +169,9 @@ function teethStarts(start: Vect, end: Vect, width: number, teethWidth: number, 
     return vects
 }
 
-function teeth(coordinates: Vect[], configs: { degrees?: number, reverse?: boolean | false, nogap?: boolean | false, width: number, depth: number, teethWidth?: number }[]): Vect[] {
+interface TeethConfig { degrees?: number, reverse?: boolean | false, nogap?: boolean | false, width: number, depth: number, teethWidth?: number }
+
+function teeth(coordinates: Vect[], configs:(TeethConfig | undefined) []): Vect[] {
     const allVects = []
     if (configs.length !== coordinates.length - 1) {
         throw "Invalid number of configs, expected " + (coordinates.length - 1) + " but got " + configs.length
@@ -270,9 +259,9 @@ function teeth(coordinates: Vect[], configs: { degrees?: number, reverse?: boole
 
 class PiltoverLantern {
 
-    private readonly svg
+    private readonly svg: any
 
-    private readonly plateWidth
+    private readonly plateWidth: any
     private readonly width = 3.1;
     private readonly teethWidth = 2.9;
     private readonly depth = 3.0;
@@ -280,7 +269,9 @@ class PiltoverLantern {
     private readonly smallHoleSizeRadius = 7.5
     private centralCircleRadius: number;
 
-    constructor(canvasWidth: number, canvasHeight: number, centralCircleRadius: number, plateWidth: number = 3) {
+    constructor(canvasWidth: number, canvasHeight: number, centralCircleRadius: number,
+                mode : "printOnce" | "print5",
+                plateWidth: number = 3) {
         this.centralCircleRadius = centralCircleRadius;
         this.plateWidth = plateWidth
         this.svg = {
@@ -293,19 +284,24 @@ class PiltoverLantern {
         }
 
         const baseplateLength = 150 - 21 * 2
+        const topplateLength = 93
+        const ltop = this.crownPlateLength(topplateLength)
+        const lbottom = this.crownPlateLength(baseplateLength)
+         
+        if(mode === "print5"){
+            this.addTopRect(new Vect(28.5, 0))
+            this.addMainPlate(new Vect(0, 64 - this.depth))
+            this.addTriangles(new Vect(28.5 + 93, 6))
+            this.addCrownPlate(50, lbottom, 8, new Vect(180, 0))
+            this.addCrownPlate(50, ltop, 8, new Vect(180, 60))
+        }else{
+            this.addBaseplate(new Vect(0, 0), baseplateLength)
+            this.addTopPlate(new Vect(0, 200), topplateLength)
+            
+            this.addEndPlate(lbottom, new Vect(200, 0))
+            this.addEndPlate(ltop, new Vect(200, 200))
 
-        const lbottom = this.addBaseplate(new Vect(0, 0), baseplateLength)
-        this.addCrownPlate(50, lbottom, new Vect(0, 0))
-        this.addEndPlate(lbottom, new Vect(0, 0))
-        const ltop = this.addTopPlate(new Vect(0, 0), 93)
-        this.addCrownPlate(50, ltop, new Vect(0, 0))
-        this.addEndPlate(ltop, new Vect(0, 0))
-
-
-        this.addTriangles(new Vect(0, 0))
-        this.addTopRect(new Vect(0, 0))
-        this.addMainPlate(new Vect(0, 0))
-
+        }
     }
 
     public asXml(): string {
@@ -313,33 +309,45 @@ class PiltoverLantern {
         return builder.buildObject({svg: this.svg});
     }
 
-    private addEndPlate(l, offset: Vect) {
+    private addEndPlate(l:any, offset: Vect) {
         const r = radiusForRegularoid(5, l)
         this.add(line(regularoid(new Vect(r, r).add(offset), 5, r)))
         this.add(circle(new Vect(r, r).add(offset), this.smallHoleSizeRadius))
     }
+    
+    private crownPlateLength(crownplateBaselength): number{
+        const crownsize = Math.sin(Math.PI * 2 / 5)
+        const baseplate_crown = regularoid(new Vect(0,0), 5, radiusForRegularoid(5, crownplateBaselength - 10))
+        const crown_start = baseplate_crown[0]
+        const crown_end = baseplate_crown[1]
+        const rot = crown_end.sub(crown_start).normalize()
+        const start = crown_start.add(rot.mul(crownsize))
+        const end = crown_end.sub(rot.mul(crownsize))
+        return start.dist(end)
+    }
 
-    private addCrownPlate(h: number, w: number, offset: Vect) {
+    private addCrownPlate(h: number, w: number, cornerRound: number, offset: Vect) {
         const outline = [
-            [5, 0],
-            [w - 5, 0],
-            [w, 5],
+            [cornerRound, 0],
+            [w - cornerRound, 0],
+            [w, cornerRound],
             [w, h + this.plateWidth],
             [w - this.crownConnectWidth, h + this.plateWidth],
             [w - this.crownConnectWidth, h],
             [this.crownConnectWidth, h],
             [this.crownConnectWidth, h + this.plateWidth],
             [0, h + this.plateWidth],
-            [0, 5],
-            [5, 0]
+            [0, cornerRound],
+            [cornerRound, 0]
         ]
         this.add(line(outline.map(([x, y]) => new Vect(x, y).add(offset))))
     }
 
     private addTopPlate(offset: Vect,
                         top_length: number) {
-        const baseplate_center = offset.addxy(top_length, top_length)
-        const topplate_outer = regularoid(baseplate_center, 5, radiusForRegularoid(5, top_length))
+        const r = radiusForRegularoid(5, top_length)
+        const baseplate_center = offset.addxy(r, r)
+        const topplate_outer = regularoid(baseplate_center, 5, r)
         const baseplate_crown = regularoid(baseplate_center, 5, radiusForRegularoid(5, top_length - 10))
         const config = {
             width: this.width, teethWidth: this.teethWidth, depth: this.plateWidth * 1.5,
@@ -376,14 +384,13 @@ class PiltoverLantern {
     private addBaseplate(
         offset: Vect,
         bottom_length: number
-    ): number {
-        const baseplate_center = offset.addxy(bottom_length, bottom_length)
-        const baseplate_outer = regularoid(baseplate_center, 5, radiusForRegularoid(5, bottom_length + 5))
+    ) {
+        const r = radiusForRegularoid(5, bottom_length + 5)
+        const baseplate_center = offset.addxy(r, r)
+        const baseplate_outer = regularoid(baseplate_center, 5, r)
         const baseplate_connect = regularoid(baseplate_center, 5, radiusForRegularoid(5, bottom_length + 0.1)) // + 0.1, as rounding ate one hole
         const baseplate_crown = regularoid(baseplate_center, 5, radiusForRegularoid(5, bottom_length - 10))
-        this.add(line(baseplate_outer, black))
-        this.add(line(baseplate_connect, black))
-        this.add(line(baseplate_crown, black))
+        this.add(line(baseplate_outer))
         this.add(circle(baseplate_center, this.centralCircleRadius))
         const crownsize = Math.sin(Math.PI * 2 / 5)
         for (let i = 0; i < 5; i++) {
@@ -401,13 +408,6 @@ class PiltoverLantern {
             this.add(line(rect(crown_start.add(rot.mul(crownsize)), crown_start.add(rot.mul(crownsize + this.crownConnectWidth)), this.plateWidth)))
             this.add(line(rect(crown_end.sub(rot.mul(crownsize)), crown_end.sub(rot.mul(crownsize + this.crownConnectWidth)), this.plateWidth)))
         }
-
-        const crown_start = baseplate_crown[0]
-        const crown_end = baseplate_crown[1]
-        const rot = crown_end.sub(crown_start).normalize()
-        const start = crown_start.add(rot.mul(crownsize))
-        const end = crown_end.sub(rot.mul(crownsize))
-        return start.dist(end)
     }
 
     private addTriangles(offset: Vect) {
@@ -517,8 +517,10 @@ class PiltoverLantern {
 
 
 function main(): void {
-    const sketch = new PiltoverLantern(300, 400, 60, 3)
-    writeFileSync("Generated.svg", sketch.asXml())
+    const sketch = new PiltoverLantern(300, 400, 113/2, "printOnce", 3)
+    writeFileSync("GeneratedOnce.svg", sketch.asXml())
+    const sketch5 = new PiltoverLantern(800, 400, 113/2, "print5", 3)
+    writeFileSync("Generated5.svg", sketch5.asXml())
     console.log("Done " + new Date().toISOString())
 }
 

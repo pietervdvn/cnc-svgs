@@ -1,10 +1,16 @@
 import * as xml2js from "xml2js"
 import {writeFileSync} from "fs";
 
-const cutStyle = {
+const foldStyle = {
     stroke: "#ff0000",
     "stroke-width": "0.001mm",
     style: "fill:none;stroke-width:1"
+}
+
+const cutStyle = {
+    stroke: "#000000",
+    "stroke-width": "0.001mm",
+    style: "fill:none;stroke-width:1.5"
 }
 
 
@@ -68,6 +74,7 @@ class Vect {
         const y = (cos * this.y) - (sin * this.x)
         return new Vect(x, y)
     }
+
 }
 
 function circle(center: Vect, radius: number): any {
@@ -79,7 +86,7 @@ function circle(center: Vect, radius: number): any {
             {
                 $: {
                     cx: center.x, cy: center.y, r: radius,
-                    ...cutStyle
+                    ...foldStyle
                 }
             }
     }
@@ -149,7 +156,7 @@ function regularoid(center: Vect, n: number, radius: number): Vect[] {
     return points;
 }
 
-function line(coordinates: Vect[], style = cutStyle) {
+function line(coordinates: Vect[], style = foldStyle) {
     let path = "M"
     for (let i = 0; i < coordinates.length; i++) {
         const c = coordinates[i]
@@ -169,9 +176,19 @@ function line(coordinates: Vect[], style = cutStyle) {
     }
 }
 
-function rect(c1: Vect, c2: Vect, width: number): Vect[] {
-    const m = c2.sub(c1).rotate(-90).mul(width / 2 / c2.dist(c1))
-    const m0 = c2.sub(c1).rotate(90).mul(width / 2 / c2.dist(c1))
+function alongLine(a: Vect, b: Vect, distance: number) {
+    return b.sub(a).normalize().mul(distance).add(a)
+}
+
+function rect(c1: Vect, c2: Vect, width: number, center: boolean = true): Vect[] {
+    let m = c2.sub(c1).rotate(-90).mul(width / 2 / c2.dist(c1))
+    let m0 = c2.sub(c1).rotate(90).mul(width / 2 / c2.dist(c1))
+
+    if (!center) {
+        m = c2.sub(c1).rotate(90).mul(width / c2.dist(c1))
+        m0 = new Vect(0, 0)
+    }
+
 
     return [c1.add(m), c2.add(m), c2.add(m0), c1.add(m0), c1.add(m)]
 }
@@ -577,7 +594,7 @@ class PiltoverLantern extends SvgGeneratorBase {
     }
 }
 
-const globalOffset = new Vect(10, 60)
+const globalOffset = new Vect(10, 62)
 
 class CardboardSettings {
     numberOfSides = 5
@@ -599,13 +616,13 @@ class CardboardPlate extends SvgGeneratorBase {
         super(canvasWidth, canvasHeight);
         this._options = options;
 
-       this.addFoldablePlates()
+        this.addFoldablePlates()
     }
-    
-    private addFoldablePlates(){
+
+    private addFoldablePlates() {
         const options = this._options
         const bottomPlate = this.generateFrontPlateBottom()
-        const topPlate = this.generateFrontPlateTop()
+        const fronttopPlate = this.generateFrontPlateTop()
         const crownBase = this.crownBase()
         const crownPlate = this.crownPlate()
         const d = this.plateRotation()
@@ -620,17 +637,98 @@ class CardboardPlate extends SvgGeneratorBase {
             }
 
             this.add(line(bottomPlate.map(move)))
-            this.add(line(topPlate.map(move)))
+            this.add(line(fronttopPlate.map(move)))
             this.add(line(crownBase.map(move)))
             this.add(line(crownPlate.map(move)))
+
+            {
+                // Add flaps to crownPlate
+                const a = crownPlate[1]
+                const b = crownPlate[2]
+                const a_opp = crownPlate[3]
+                const b_opp = crownPlate[0]
+                this.add(line(
+                    rect(
+                        a,
+                        b,
+                        5,
+                        false
+                    ).map(move)))
+
+                this.add(line(
+                    [alongLine(a, b, 5), alongLine(b, a, 5)].map(move),
+                    cutStyle))
+
+                this.add(line(rect(
+                    alongLine(a_opp, b_opp, 6),
+                    alongLine(b_opp, a_opp, 6),
+                    10, false).map(move), cutStyle))
+            }
+
+
             if (i + 1 == options.numberOfSides) {
                 const w = this._options.minirectWidth
-                this.add(line(this.topPlate().map(v => move(v.add(new Vect(0, -w))))))
+                const topPlate = this.topPlate();
+                const offset = new Vect(0, -w)
+                this.add(line(topPlate.map(v => move(v.add(offset)))))
+
+                for (let j = 0; j < options.numberOfSides; j++) {
+                    if (j == 0) {
+                        continue
+                    }
+
+                    const a = topPlate[j]
+                    const b = topPlate[(j + 1) % topPlate.length]
+
+                    // Add flaps to insert
+                    this.add(line(rect(
+                        alongLine(a, b, 11),
+                        alongLine(b, a, 11),
+                        10,
+                        false
+                    ).map(v => move(v.add(offset))), cutStyle))
+                }
+            } else {
+                // add a side flap
+                const a = crownPlate[2];
+                const b = crownPlate[3];
+                this.add(line(rect(a, b, 5, false).map(move)))
+                this.add(line(
+                    [alongLine(a, b, 10),
+                        alongLine(b, a, 10)].map(move), cutStyle))
             }
 
 
             if (i == 1) {
-                this.add(line(this.bottomPlate().map(v => move(v))))
+                const bottomPlate = this.bottomPlate()
+                this.add(line(bottomPlate.map(v => move(v))))
+
+                for (let j = 0; j < options.numberOfSides; j++) {
+                    if(j == 0){
+                        continue
+                    }
+                    const a = bottomPlate[j]
+                    const b = bottomPlate[(j + 1) % bottomPlate.length]
+                    this.add(line(
+                        rect(
+                            alongLine(a, b, 16),
+                            alongLine(b, a, 16), 
+                            15, false
+                        ).map(move)
+                    ))
+                }
+            } else {
+                // add a side flap
+                const a = bottomPlate[2]
+                const b = bottomPlate[3]
+                this.add(line(rect(
+                    alongLine(a, b, 5), alongLine(b, a, 5), 5, false).map(move)))
+
+
+                this.add(line(
+                    [alongLine(a, b, 15), alongLine(b, a, 15)].map(move), cutStyle))
+
+
             }
 
             turnPoint = turnPoint.rotate(-d)
@@ -649,28 +747,29 @@ class CardboardPlate extends SvgGeneratorBase {
         return Math.atan(width / height) * 180 / Math.PI
     }
 
-    private crownWidth(): number {  const options = this._options
+    private crownWidth(): number {
+        const options = this._options
         const crownRadius = options.topDiameter - options.minirectWidth
         return edgeLengthForRegularoid(options.numberOfSides, crownRadius)
     }
-    
+
     private crownBase(): Vect[] {
         const options = this._options
         const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
         const center_x = mid_width / 2
         const top_width = edgeLengthForRegularoid(options.numberOfSides, options.topDiameter)
-        const crown_width= this.crownWidth()
+        const crown_width = this.crownWidth()
         const yOffset = this.topPlateHeight()
         return [
             new Vect(center_x + top_width / 2, 0),
             new Vect(center_x - top_width / 2, 0),
-            new Vect(center_x  - crown_width / 2, -options.minirectWidth),
+            new Vect(center_x - crown_width / 2, -options.minirectWidth),
             new Vect(center_x + crown_width / 2, -options.minirectWidth),
             new Vect(center_x + top_width / 2, 0)
         ].map(v => v.addxy(0, -yOffset))
     }
-    
-    private crownPlate(): Vect[]{
+
+    private crownPlate(): Vect[] {
         const options = this._options
         const crownRadius = options.topDiameter - options.minirectWidth
         const crown_width = edgeLengthForRegularoid(options.numberOfSides, crownRadius)
@@ -680,7 +779,7 @@ class CardboardPlate extends SvgGeneratorBase {
         return [
             new Vect(center_x + crown_width / 2, 0),
             new Vect(center_x - crown_width / 2, 0),
-            new Vect(center_x  - crown_width / 2, -options.crownHeight),
+            new Vect(center_x - crown_width / 2, -options.crownHeight),
             new Vect(center_x + crown_width / 2, -options.crownHeight),
             new Vect(center_x + crown_width / 2, 0)
         ].map(v => v.addxy(0, -yOffset))
@@ -700,7 +799,7 @@ class CardboardPlate extends SvgGeneratorBase {
 
         return plate
     }
-    
+
 
     private bottomPlate(): Vect[] {
         const options = this._options
@@ -792,19 +891,18 @@ We know: A - B = options.midDiameter
 function main(): void {
 
 
-
-   const a4 = <CardboardSettings> {
-        numberOfSides : 5,
-        baseDiameter : 35,
-        midDiameter : 47,
-        baseToMidHeight : 70,
-        topDiameter : 40,
-        midToTopHeight : 25,
-        minirectWidth : 10,
-        crownHeight : 20
+    const a4 = <CardboardSettings>{
+        numberOfSides: 5,
+        baseDiameter: 35,
+        midDiameter: 47,
+        baseToMidHeight: 70,
+        topDiameter: 40,
+        midToTopHeight: 25,
+        minirectWidth: 10,
+        crownHeight: 20
     }
-    
-    
+
+
     const cardboard = new CardboardPlate(397, 210, a4)
     writeFileSync("cardboard.svg", cardboard.asXml())
     console.log("Written cardboard.svg")

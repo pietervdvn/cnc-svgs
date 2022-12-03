@@ -7,6 +7,14 @@ const cutStyle = {
     style: "fill:none;stroke-width:1"
 }
 
+
+const debugStyle = {
+    stroke: "#33ff00",
+    "stroke-width": "0.001mm",
+    style: "fill:none;stroke-width:3"
+}
+
+
 class Vect {
 
     public readonly x: number;
@@ -105,6 +113,24 @@ function radiusForRegularoid(n: number, length: number) {
     return length / (Math.sin(Math.PI / n) * 2)
 }
 
+/**
+ * Calculates how long an edge is for a regularoid with n edges
+ * @param n
+ * @param radius
+ */
+function edgeLengthForRegularoid(n: number, radius: number) {
+    // radius = length / (Math.sin(Math.PI / n) * 2)
+    // radius * (Math.sin(Math.PI / n) * 2) = length
+    return radius * (Math.sin(Math.PI / n) * 2)
+}
+
+/**
+ * Length of the line which is perpendicular to an edge and goes to the center
+ */
+function regularoidDistanceFromCenterToEdge(n: number, radius: number): number {
+    return radius * Math.cos(Math.PI / n)
+}
+
 function regularoid(center: Vect, n: number, radius: number): Vect[] {
 
     if (radius < 1) {
@@ -116,7 +142,7 @@ function regularoid(center: Vect, n: number, radius: number): Vect[] {
     const degrees = 360 / n;
     for (let i = 0; i < n + 1; i++) {
         points.push(
-            center.add(up.rotate(-i * degrees))
+            center.add(up.rotate((degrees / 2) - i * degrees))
         )
     }
 
@@ -169,9 +195,16 @@ function teethStarts(start: Vect, end: Vect, width: number, teethWidth: number, 
     return vects
 }
 
-interface TeethConfig { degrees?: number, reverse?: boolean | false, nogap?: boolean | false, width: number, depth: number, teethWidth?: number }
+interface TeethConfig {
+    degrees?: number,
+    reverse?: boolean | false,
+    nogap?: boolean | false,
+    width: number,
+    depth: number,
+    teethWidth?: number
+}
 
-function teeth(coordinates: Vect[], configs:(TeethConfig | undefined) []): Vect[] {
+function teeth(coordinates: Vect[], configs: (TeethConfig | undefined) []): Vect[] {
     const allVects = []
     if (configs.length !== coordinates.length - 1) {
         throw "Invalid number of configs, expected " + (coordinates.length - 1) + " but got " + configs.length
@@ -256,24 +289,11 @@ function teeth(coordinates: Vect[], configs:(TeethConfig | undefined) []): Vect[
 
 }
 
+class SvgGeneratorBase {
+    public readonly svg
 
-class PiltoverLantern {
-
-    private readonly svg: any
-
-    private readonly plateWidth: any
-    private readonly width = 3.1;
-    private readonly teethWidth = 2.9;
-    private readonly depth = 3.0;
-    private readonly crownConnectWidth = 5.0
-    private readonly smallHoleSizeRadius = 7.5
-    private centralCircleRadius: number;
-
-    constructor(canvasWidth: number, canvasHeight: number, centralCircleRadius: number,
-                mode : "printOnce" | "print5",
-                plateWidth: number = 3) {
-        this.centralCircleRadius = centralCircleRadius;
-        this.plateWidth = plateWidth
+    constructor(canvasWidth: number, canvasHeight: number,
+    ) {
         this.svg = {
             $: {
                 width: canvasWidth + "mm",
@@ -283,21 +303,76 @@ class PiltoverLantern {
             }
         }
 
+
+    }
+
+    public asXml(): string {
+        const builder = new xml2js.Builder();
+        return builder.buildObject({svg: this.svg});
+    }
+
+    protected add(item: any): void {
+        if (item === undefined) {
+            return
+        }
+
+        for (const key of Object.keys(item)) {
+            let value = item[key]
+            let arr: any[];
+            if (Array.isArray(value)) {
+                arr = <[]>value;
+            } else {
+                arr = [value]
+            }
+            if (this.svg[key] !== undefined) {
+                this.svg[key].push(...arr)
+            } else {
+                this.svg[key] = arr
+            }
+        }
+    }
+}
+
+
+class PiltoverLantern extends SvgGeneratorBase {
+
+    private readonly plateWidth: any
+    private readonly width = 3.1;
+    private readonly teethWidth = 2.9;
+    private readonly depth = 3.0;
+    private readonly crownConnectWidth = 5.0
+    private readonly smallHoleSizeRadius = 7.5
+    private centralCircleRadius: number;
+    private readonly papercraft: boolean;
+
+
+    constructor(canvasWidth: number, canvasHeight: number, centralCircleRadius: number,
+                mode: "printOnce" | "print5",
+                options?: {
+
+                    plateWidth?: 3 | number, papercraft?: false | boolean
+                }
+    ) {
+        super(canvasWidth, canvasHeight)
+        this.centralCircleRadius = centralCircleRadius;
+        this.plateWidth = options?.plateWidth ?? 3
+        this.papercraft = options?.papercraft ?? false;
+
         const baseplateLength = 150 - 21 * 2
         const topplateLength = 93
         const ltop = this.crownPlateLength(topplateLength)
         const lbottom = this.crownPlateLength(baseplateLength)
-         
-        if(mode === "print5"){
+
+        if (mode === "print5") {
             this.addTopRect(new Vect(28.5, 0))
             this.addMainPlate(new Vect(0, 64 - this.depth))
             this.addTriangles(new Vect(28.5 + 93, 6))
             this.addCrownPlate(50, lbottom, 8, new Vect(180, 0))
             this.addCrownPlate(50, ltop, 8, new Vect(180, 60))
-        }else{
+        } else {
             this.addBaseplate(new Vect(0, 0), baseplateLength)
             this.addTopPlate(new Vect(0, 200), topplateLength)
-            
+
             this.addEndPlate(lbottom, new Vect(200, 0))
             this.addEndPlate(ltop, new Vect(200, 200))
 
@@ -309,15 +384,15 @@ class PiltoverLantern {
         return builder.buildObject({svg: this.svg});
     }
 
-    private addEndPlate(l:any, offset: Vect) {
+    private addEndPlate(l: any, offset: Vect) {
         const r = radiusForRegularoid(5, l)
         this.add(line(regularoid(new Vect(r, r).add(offset), 5, r)))
         this.add(circle(new Vect(r, r).add(offset), this.smallHoleSizeRadius))
     }
-    
-    private crownPlateLength(crownplateBaselength): number{
+
+    private crownPlateLength(crownplateBaselength): number {
         const crownsize = Math.sin(Math.PI * 2 / 5)
-        const baseplate_crown = regularoid(new Vect(0,0), 5, radiusForRegularoid(5, crownplateBaselength - 10))
+        const baseplate_crown = regularoid(new Vect(0, 0), 5, radiusForRegularoid(5, crownplateBaselength - 10))
         const crown_start = baseplate_crown[0]
         const crown_end = baseplate_crown[1]
         const rot = crown_end.sub(crown_start).normalize()
@@ -343,6 +418,13 @@ class PiltoverLantern {
         this.add(line(outline.map(([x, y]) => new Vect(x, y).add(offset))))
     }
 
+    private teeth(coordinates: Vect[], configs: (TeethConfig | undefined) []): Vect[] {
+        if (this.papercraft) {
+            return coordinates
+        }
+        return teeth(coordinates, configs)
+    }
+
     private addTopPlate(offset: Vect,
                         top_length: number) {
         const r = radiusForRegularoid(5, top_length)
@@ -354,7 +436,7 @@ class PiltoverLantern {
             reverse: false,
             noGap: true
         }
-        this.add(line(teeth(topplate_outer, [config, config, config, config, config])))
+        this.add(line(this.teeth(topplate_outer, [config, config, config, config, config])))
         this.add(circle(baseplate_center, this.centralCircleRadius))
         const crownsize = Math.sin(Math.PI * 2 / 5)
         for (let i = 0; i < 5; i++) {
@@ -419,7 +501,7 @@ class PiltoverLantern {
             [-28.5, 0],
         ].map(([x, y]) => new Vect(28.5 + x, y))
 
-        this.add(line(teeth(
+        this.add(line(this.teeth(
             bottomTriangle,
             [
                 {
@@ -431,7 +513,7 @@ class PiltoverLantern {
             ]
         ).map(v => v.rotate(180).add(offset).addxy(57, 57))))
 
-        this.add(line(teeth(
+        this.add(line(this.teeth(
             bottomTriangle,
             [
                 {
@@ -444,7 +526,7 @@ class PiltoverLantern {
 
     private addTopRect(offset: Vect) {
         const topRect = [new Vect(0, 0), new Vect(0, 66), new Vect(93, 66), new Vect(93, 0), new Vect(0, 0)]
-        const teethedTopRect = teeth(topRect, [
+        const teethedTopRect = this.teeth(topRect, [
             undefined,
             {
                 width: this.width,
@@ -461,26 +543,6 @@ class PiltoverLantern {
         this.add(line(teethedTopRect.map(v => v.add(offset))))
     }
 
-    private add(item: any): void {
-        if (item === undefined) {
-            return
-        }
-
-        for (const key of Object.keys(item)) {
-            let value = item[key]
-            let arr: any[];
-            if (Array.isArray(value)) {
-                arr = <[]>value;
-            } else {
-                arr = [value]
-            }
-            if (this.svg[key] !== undefined) {
-                this.svg[key].push(...arr)
-            } else {
-                this.svg[key] = arr
-            }
-        }
-    }
 
     private addMainPlate(offset: Vect) {
 
@@ -494,7 +556,7 @@ class PiltoverLantern {
             [21, 215],
         ].map(([x, y]) => new Vect(x, y + 5).add(offset))
 
-        this.add(line(teeth(frontPlate, [
+        this.add(line(this.teeth(frontPlate, [
             undefined,
             undefined,
             {
@@ -515,12 +577,246 @@ class PiltoverLantern {
     }
 }
 
+const globalOffset = new Vect(10, 60)
+
+class CardboardSettings {
+    numberOfSides = 5
+    // In mm
+    baseDiameter: number = 70
+    midDiameter: number = 100
+    // Length from the baseplate to the midcrown, measured vertically. The length of the plate will thus be longer, as it bulges out (unless baseDiameter = midDiameter, then they'll be the same)
+    baseToMidHeight: number = 125
+    topDiameter: number = 75
+    midToTopHeight: number = 50
+    minirectWidth: number = 15
+    crownHeight: number = 40;
+}
+
+class CardboardPlate extends SvgGeneratorBase {
+    private readonly _options: CardboardSettings;
+
+    constructor(canvasWidth: number, canvasHeight: number, options: CardboardSettings) {
+        super(canvasWidth, canvasHeight);
+        this._options = options;
+
+       this.addFoldablePlates()
+    }
+    
+    private addFoldablePlates(){
+        const options = this._options
+        const bottomPlate = this.generateFrontPlateBottom()
+        const topPlate = this.generateFrontPlateTop()
+        const crownBase = this.crownBase()
+        const crownPlate = this.crownPlate()
+        const d = this.plateRotation()
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+
+        let turnPoint = new Vect(-mid_width, 0)
+        for (let i = 0; i < options.numberOfSides; i++) {
+            turnPoint = turnPoint.add(new Vect(mid_width, 0))
+
+            const move: (v: Vect) => Vect = (v: Vect) => {
+                return v.rotate(-i * d).add(turnPoint).add(globalOffset)
+            }
+
+            this.add(line(bottomPlate.map(move)))
+            this.add(line(topPlate.map(move)))
+            this.add(line(crownBase.map(move)))
+            this.add(line(crownPlate.map(move)))
+            if (i + 1 == options.numberOfSides) {
+                const w = this._options.minirectWidth
+                this.add(line(this.topPlate().map(v => move(v.add(new Vect(0, -w))))))
+            }
+
+
+            if (i == 1) {
+                this.add(line(this.bottomPlate().map(v => move(v))))
+            }
+
+            turnPoint = turnPoint.rotate(-d)
+        }
+    }
+
+    /**
+     * Generates how much the base-plate must be rotated, in degrees
+     * @private
+     */
+    private plateRotation(): number {
+        const options = this._options
+        const height = this.bottomPlateHeight();
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+        const width = (mid_width - edgeLengthForRegularoid(options.numberOfSides, options.baseDiameter))
+        return Math.atan(width / height) * 180 / Math.PI
+    }
+
+    private crownWidth(): number {  const options = this._options
+        const crownRadius = options.topDiameter - options.minirectWidth
+        return edgeLengthForRegularoid(options.numberOfSides, crownRadius)
+    }
+    
+    private crownBase(): Vect[] {
+        const options = this._options
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+        const center_x = mid_width / 2
+        const top_width = edgeLengthForRegularoid(options.numberOfSides, options.topDiameter)
+        const crown_width= this.crownWidth()
+        const yOffset = this.topPlateHeight()
+        return [
+            new Vect(center_x + top_width / 2, 0),
+            new Vect(center_x - top_width / 2, 0),
+            new Vect(center_x  - crown_width / 2, -options.minirectWidth),
+            new Vect(center_x + crown_width / 2, -options.minirectWidth),
+            new Vect(center_x + top_width / 2, 0)
+        ].map(v => v.addxy(0, -yOffset))
+    }
+    
+    private crownPlate(): Vect[]{
+        const options = this._options
+        const crownRadius = options.topDiameter - options.minirectWidth
+        const crown_width = edgeLengthForRegularoid(options.numberOfSides, crownRadius)
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+        const center_x = mid_width / 2
+        const yOffset = this.topPlateHeight() + options.minirectWidth
+        return [
+            new Vect(center_x + crown_width / 2, 0),
+            new Vect(center_x - crown_width / 2, 0),
+            new Vect(center_x  - crown_width / 2, -options.crownHeight),
+            new Vect(center_x + crown_width / 2, -options.crownHeight),
+            new Vect(center_x + crown_width / 2, 0)
+        ].map(v => v.addxy(0, -yOffset))
+    }
+
+    private topPlate(): Vect[] {
+        const options = this._options
+        const crownRadius = options.topDiameter - options.minirectWidth
+        const yOffset = this.topPlateHeight() + options.crownHeight + regularoidDistanceFromCenterToEdge(options.numberOfSides, crownRadius)
+        const xOffset = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter) / 2
+
+        const offset = new Vect(xOffset, -yOffset)
+        let plate = regularoid(new Vect(0, 0), this._options.numberOfSides, crownRadius)
+
+        // Rotate 180° the plate: top line will always be horizontal
+        plate = plate.map(v => v.rotate(180).add(offset))
+
+        return plate
+    }
+    
+
+    private bottomPlate(): Vect[] {
+        const options = this._options
+        const yOffset = this.bottomPlateHeight() + regularoidDistanceFromCenterToEdge(options.numberOfSides, options.baseDiameter)
+        const xOffset = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter) / 2
+
+        const offset = new Vect(xOffset, yOffset)
+        let plate = regularoid(new Vect(0, 0), this._options.numberOfSides, this._options.baseDiameter)
+
+        // Rotate 180° the plate: top line will always be horizontal
+        plate = plate.map(v => v.add(offset))
+
+        return plate
+    }
+
+    private bottomPlateHeight(): number {
+        const options = this._options
+        /*
+
+A -------- B
+         |
+         |
+         |
+ D------ C
+         |
+         |
+         |
+         |
+         F
+We have: A the edge of the mid rim
+D: the edge of the baseplate-rim
+B - C - F: the center axis
+We know: A - B = options.midDiameter
+ D - C = options.baseDiameter     
+ B -> C = options.baseToMidHeight
+ We need to know: A - D, as this is the height for bottom_y
+ We can act as if D-C has length 0, by subtracting it's length from A-B, then applying sinus rules
+ 
+*/
+        const AB = options.midDiameter - options.baseDiameter
+        const BC = options.baseToMidHeight
+        const degrees = Math.atan(AB / BC) // Degrees in D
+        return BC / Math.cos(degrees)
+    }
+
+    private topPlateHeight(): number {
+        const options = this._options
+        const AB = options.topDiameter - options.midDiameter
+        const BC = options.midToTopHeight
+        const degrees = Math.atan(AB / BC) // Degrees in D
+        return BC / Math.cos(degrees)
+    }
+
+    private generateFrontPlateTop(): Vect[] {
+        const options = this._options
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+        const center_x = mid_width / 2
+        const top_width = edgeLengthForRegularoid(options.numberOfSides, options.topDiameter)
+        const height = this.topPlateHeight()
+        return [
+            new Vect(0, 0),
+            new Vect(mid_width, 0),
+            new Vect(center_x + top_width / 2, -height),
+            new Vect(center_x - top_width / 2, -height),
+            new Vect(0, 0)
+        ]
+    }
+
+    /**
+     * Generates a trapezium serving as the bottom-plate.
+     * Zero-point= upper-left
+     * @private
+     */
+    private generateFrontPlateBottom(): Vect[] {
+        const options = this._options
+        const mid_width = edgeLengthForRegularoid(options.numberOfSides, options.midDiameter)
+        const bottom_center_x = mid_width / 2
+        const bottom_y = this.bottomPlateHeight();
+        return [
+            new Vect(0, 0), // Top left
+            new Vect(mid_width, 0), // Top right
+            new Vect(bottom_center_x + edgeLengthForRegularoid(options.numberOfSides, options.baseDiameter) / 2, bottom_y), // Bottom right
+            new Vect(bottom_center_x - edgeLengthForRegularoid(options.numberOfSides, options.baseDiameter) / 2, bottom_y),
+            new Vect(0, 0)
+        ]
+    }
+}
 
 function main(): void {
-    const sketch = new PiltoverLantern(300, 400, 113/2, "printOnce", 3)
-    writeFileSync("GeneratedOnce.svg", sketch.asXml())
-    const sketch5 = new PiltoverLantern(800, 400, 113/2, "print5", 3)
-    writeFileSync("Generated5.svg", sketch5.asXml())
+
+
+
+   const a4 = <CardboardSettings> {
+        numberOfSides : 5,
+        baseDiameter : 35,
+        midDiameter : 47,
+        baseToMidHeight : 70,
+        topDiameter : 40,
+        midToTopHeight : 25,
+        minirectWidth : 10,
+        crownHeight : 20
+    }
+    
+    
+    const cardboard = new CardboardPlate(397, 210, a4)
+    writeFileSync("cardboard.svg", cardboard.asXml())
+    console.log("Written cardboard.svg")
+    /*
+        const sketch = new PiltoverLantern(300, 400, 113 / 2, "printOnce", {
+            papercraft: true
+        })
+        writeFileSync("GeneratedOnce.svg", sketch.asXml())
+        const sketch5 = new PiltoverLantern(800, 400, 113 / 2, "print5", {
+            papercraft: true
+        })
+        writeFileSync("Generated5.svg", sketch5.asXml())*/
     console.log("Done " + new Date().toISOString())
 }
 
